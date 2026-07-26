@@ -4,6 +4,11 @@ import subprocess
 import tempfile
 from multiprocessing import Pool
 
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
 import juliapkg
 
 
@@ -46,6 +51,40 @@ def test_resolve_contention():
 }
 """)
         Pool(5).map(resolve_in_tempdir, [tempdir] * 5)
+
+
+def test_resolve_preferences():
+    with tempfile.TemporaryDirectory() as tempdir:
+        # the default deps file for a project is <project>/pyjuliapkg/juliapkg.json
+        depsdir = os.path.join(tempdir, "pyjuliapkg")
+        os.makedirs(depsdir)
+        with open(os.path.join(depsdir, "juliapkg.json"), "w") as f:
+            f.write("""
+{
+"julia": "1",
+"packages": {
+"Example": {
+    "uuid": "7876af07-990d-54b4-ab0e-23690620f79a",
+    "version": "0.5",
+    "preferences": {
+        "use_jl_def": true,
+        "greeting": "hello"
+    }
+}
+}
+}
+""")
+        subprocess.run(
+            ["python", "-c", "import juliapkg; juliapkg.resolve()"],
+            env=dict(os.environ, PYTHON_JULIAPKG_PROJECT=tempdir),
+            check=True,
+        )
+        with open(os.path.join(tempdir, "Project.toml"), "rb") as f:
+            proj = tomllib.load(f)
+        assert proj["preferences"]["Example"] == {
+            "use_jl_def": True,
+            "greeting": "hello",
+        }
 
 
 def test_status():
