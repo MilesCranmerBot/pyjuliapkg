@@ -438,10 +438,7 @@ def find_requirements():
                             k,
                             pk,
                             "\n".join(
-                                [
-                                    "- {!r} at {}".format(v, f)
-                                    for (f, v) in pfvs.items()
-                                ]
+                                ["- {!r} at {}".format(v, f) for (f, v) in pfvs.items()]
                             ),
                         )
                     )
