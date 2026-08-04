@@ -28,8 +28,9 @@ pip install juliapkg
 - `require_julia(version, target=None)` declares that you require the given version of
   Julia. The `version` is a Julia compat specifier, so `1.5` matches any `1.*.*` version at
   least `1.5`.
-- `add(pkg, uuid=None, dev=False, version=None, path=None, subdir=None, url=None, rev=None, target=None)`
-  adds a required package.
+- `add(pkg, uuid=None, dev=False, version=None, path=None, subdir=None, url=None, rev=None, preferences=None, target=None)`
+  adds a required package. `preferences` is a dict of [package preferences](https://github.com/JuliaPackaging/Preferences.jl),
+  written to `[preferences.<pkg>]` in the generated `Project.toml`.
 - `rm(pkg, target=None)` remove a package.
 
 Note that these functions edit `juliapkg.json` but do not actually install anything until
@@ -55,22 +56,7 @@ Julia v1.*.* and the Example package v0.5.*:
 }
 ```
 
-Each package may also specify an optional `"preferences"` object, which is written to
-the `[preferences.<pkg>]` table of the generated `Project.toml` (read natively by
-Julia's Pkg, see [Preferences.jl](https://github.com/JuliaPackaging/Preferences.jl)):
-```json
-{
-    "packages": {
-        "Example": {
-            "uuid": "7876af07-990d-54b4-ab0e-23690620f79a",
-            "version": "0.5",
-            "preferences": {
-                "use_jl_def": true
-            }
-        }
-    }
-}
-```
+Each package may also specify an optional `"preferences"` object; see `add()` above.
 
 ### Command line interface
 

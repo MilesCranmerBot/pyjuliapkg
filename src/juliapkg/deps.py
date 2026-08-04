@@ -28,7 +28,7 @@ logger = logging.getLogger("juliapkg")
 # 5 - added hash_sha256 to deps_files for content verification
 # 6 - added libjulia path to meta
 # increment whenever the format changes
-META_VERSION = 6
+META_VERSION = 7
 
 
 def load_meta():
@@ -814,7 +814,9 @@ def require_julia(compat, target=None):
     STATE["resolved"] = False
 
 
-def add(pkg, *args, target=None, **kwargs):
+def add(pkg, *args, preferences=None, target=None, **kwargs):
+    if preferences is not None:
+        kwargs["preferences"] = preferences
     deps = load_cur_deps(target=target)
     _add(deps, pkg, *args, **kwargs)
     write_cur_deps(deps, target=target)
