@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+* Add preferences support.
+
 ## v0.1.24 (2026-05-31)
 * Add `libjulia()` function.
 

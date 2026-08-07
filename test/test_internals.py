@@ -1,3 +1,6 @@
+import json
+import os
+
 import pytest
 
 import juliapkg
@@ -104,3 +107,108 @@ def test_pkgspec_validation():
     # Test invalid rev type
     with pytest.raises(TypeError, match="package rev must be a 'str' or 'None'"):
         PkgSpec(name="Example", uuid=spec.uuid, rev=123)
+
+    # Test invalid preferences type
+    with pytest.raises(
+        TypeError, match="package preferences must be a 'dict' or 'None', got 'int'"
+    ):
+        PkgSpec(name="Example", uuid=spec.uuid, preferences=123)
+
+
+def test_pkgspec_preferences():
+    uuid = "123e4567-e89b-12d3-a456-426614174000"
+
+    # Preferences are absent by default
+    spec = PkgSpec(name="Example", uuid=uuid)
+    assert spec.preferences is None
+    assert "preferences" not in spec.dict()
+    assert "preferences" not in spec.depsdict()
+
+    # Preferences round-trip through dict() and depsdict()
+    prefs = {"precompile_float64": False, "mode": "fast", "levels": [1, 2]}
+    spec = PkgSpec(name="Example", uuid=uuid, preferences=prefs)
+    assert spec.preferences == prefs
+    assert spec.dict()["preferences"] == prefs
+    assert spec.depsdict()["preferences"] == prefs
+
+    # An empty preferences dict is kept (explicitly provided)
+    spec = PkgSpec(name="Example", uuid=uuid, preferences={})
+    assert spec.dict()["preferences"] == {}
+    assert spec.depsdict()["preferences"] == {}
+
+
+def _write_juliapkg_json(dirpath, packages):
+    fn = os.path.join(dirpath, "juliapkg.json")
+    with open(fn, "w") as fp:
+        json.dump({"packages": packages}, fp)
+    return fn
+
+
+def test_find_requirements_preferences(monkeypatch, tmp_path):
+    uuid = "123e4567-e89b-12d3-a456-426614174000"
+    dir1 = tmp_path / "a"
+    dir2 = tmp_path / "b"
+    dir1.mkdir()
+    dir2.mkdir()
+    _write_juliapkg_json(
+        dir1,
+        {
+            "Example": {
+                "uuid": uuid,
+                "preferences": {"use_jl_def": True, "mode": "fast"},
+            }
+        },
+    )
+    _write_juliapkg_json(
+        dir2,
+        {
+            "Example": {
+                "uuid": uuid,
+                "preferences": {"mode": "fast", "extra": [1, 2]},
+            }
+        },
+    )
+    monkeypatch.setattr(
+        juliapkg.deps,
+        "deps_files",
+        lambda: [
+            os.path.join(str(dir1), "juliapkg.json"),
+            os.path.join(str(dir2), "juliapkg.json"),
+        ],
+    )
+    compat, pkgs = juliapkg.deps.find_requirements()
+    assert compat is None
+    assert len(pkgs) == 1
+    assert pkgs[0].name == "Example"
+    # union of preference keys across files
+    assert pkgs[0].preferences == {
+        "use_jl_def": True,
+        "mode": "fast",
+        "extra": [1, 2],
+    }
+
+
+def test_find_requirements_preferences_conflict(monkeypatch, tmp_path):
+    uuid = "123e4567-e89b-12d3-a456-426614174000"
+    dir1 = tmp_path / "a"
+    dir2 = tmp_path / "b"
+    dir1.mkdir()
+    dir2.mkdir()
+    _write_juliapkg_json(
+        dir1,
+        {"Example": {"uuid": uuid, "preferences": {"mode": "fast"}}},
+    )
+    _write_juliapkg_json(
+        dir2,
+        {"Example": {"uuid": uuid, "preferences": {"mode": "slow"}}},
+    )
+    monkeypatch.setattr(
+        juliapkg.deps,
+        "deps_files",
+        lambda: [
+            os.path.join(str(dir1), "juliapkg.json"),
+            os.path.join(str(dir2), "juliapkg.json"),
+        ],
+    )
+    with pytest.raises(Exception, match="'preferences' entries for key 'mode'"):
+        juliapkg.deps.find_requirements()

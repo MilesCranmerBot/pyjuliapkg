@@ -28,7 +28,7 @@ logger = logging.getLogger("juliapkg")
 # 5 - added hash_sha256 to deps_files for content verification
 # 6 - added libjulia path to meta
 # increment whenever the format changes
-META_VERSION = 6
+META_VERSION = 7
 
 
 def load_meta():
@@ -80,6 +80,7 @@ class PkgSpec:
         subdir: Union[str, None] = None,
         url: Union[str, None] = None,
         rev: Union[str, None] = None,
+        preferences: Union[dict, None] = None,
     ):
         # Validate name: type then value
         if not isinstance(name, str):
@@ -161,6 +162,14 @@ class PkgSpec:
             )
         self.rev = rev
 
+        # Validate preferences (dict or None)
+        if preferences is not None and not isinstance(preferences, dict):
+            raise TypeError(
+                f"package preferences must be a 'dict' or 'None', got "
+                f"'{type(preferences).__name__}'"
+            )
+        self.preferences = preferences
+
     def jlstr(self):
         args = ['name="{}"'.format(self.name), 'uuid="{}"'.format(self.uuid)]
         if self.path is not None:
@@ -183,6 +192,7 @@ class PkgSpec:
             "subdir": self.subdir,
             "url": self.url,
             "rev": self.rev,
+            "preferences": self.preferences,
         }
         return {k: v for (k, v) in ans.items() if v is not None}
 
@@ -201,6 +211,8 @@ class PkgSpec:
             ans["url"] = self.url
         if self.rev is not None:
             ans["rev"] = self.rev
+        if self.preferences is not None:
+            ans["preferences"] = self.preferences
         return ans
 
 
@@ -405,6 +417,34 @@ def find_requirements():
         if fvs is not None:
             dep[k] = any(fvs.values())
 
+    # merges preferences dicts: union of keys across files; the same key
+    # given different values in different files is an error
+    def merge_preferences(dep, kfvs, k):
+        fvs = kfvs.pop(k, None)
+        if fvs is not None:
+            # key -> file -> value
+            keyfvs = {}
+            for f, v in fvs.items():
+                for pk, pv in v.items():
+                    keyfvs.setdefault(pk, {})[f] = pv
+            prefs = {}
+            for pk, pfvs in keyfvs.items():
+                vs = list(pfvs.values())
+                if all(v == vs[0] for v in vs):
+                    prefs[pk] = vs[0]
+                else:
+                    raise Exception(
+                        "'{}' entries for key '{}' are not unique:\n{}".format(
+                            k,
+                            pk,
+                            "\n".join(
+                                ["- {!r} at {}".format(v, f) for (f, v) in pfvs.items()]
+                            ),
+                        )
+                    )
+            if prefs:
+                dep[k] = prefs
+
     # merge dependencies: name -> key -> value
     deps = []
     for name, kfvs in all_deps.items():
@@ -416,6 +456,7 @@ def find_requirements():
         merge_unique(kw, kfvs, "rev")
         merge_compat(kw, kfvs, "version")
         merge_any(kw, kfvs, "dev")
+        merge_preferences(kw, kfvs, "preferences")
         deps.append(PkgSpec(**kw))
     # julia compat
     compat = None
@@ -537,6 +578,13 @@ def resolve(force=False, dry_run=False, update=False):
                     projcompat[pkg.name] = pkg.version
                 else:
                     projcompat.pop(pkg.name, None)
+            # add/update the preferences table
+            projprefs = projtoml.setdefault("preferences", tomlkit.table())
+            for pkg in pkgs:
+                if pkg.preferences:
+                    projprefs[pkg.name] = pkg.preferences
+                else:
+                    projprefs.pop(pkg.name, None)
             # write it out
             projtomlstr = tomlkit.dumps(projtoml)
             log_script(
