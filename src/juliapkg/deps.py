@@ -814,9 +814,7 @@ def require_julia(compat, target=None):
     STATE["resolved"] = False
 
 
-def add(pkg, *args, preferences=None, target=None, **kwargs):
-    if preferences is not None:
-        kwargs["preferences"] = preferences
+def add(pkg, *args, target=None, **kwargs):
     deps = load_cur_deps(target=target)
     _add(deps, pkg, *args, **kwargs)
     write_cur_deps(deps, target=target)
