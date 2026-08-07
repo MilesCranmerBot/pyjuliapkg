@@ -29,9 +29,12 @@ pip install juliapkg
   Julia. The `version` is a Julia compat specifier, so `1.5` matches any `1.*.*` version at
   least `1.5`.
 - `add(pkg, uuid=None, dev=False, version=None, path=None, subdir=None, url=None, rev=None, preferences=None, target=None)`
-  adds a required package. `preferences` is a dict of [package preferences](https://github.com/JuliaPackaging/Preferences.jl),
-  written to `[preferences.<pkg>]` in the generated `Project.toml`.
-- `rm(pkg, target=None)` remove a package.
+  adds a required package.
+  - `version` is a version compat specifier.
+  - `dev=True` installs the package in dev mode.
+  - `path`, `subdir`, `url` and `rev` specify the location of the package.
+  - `preferences` is a dict of [package preferences](https://github.com/JuliaPackaging/Preferences.jl).
+- `rm(pkg, target=None)` removes a package.
 
 Note that these functions edit `juliapkg.json` but do not actually install anything until
 `resolve()` is called, which happens automatically in `executable()` and `project()`.
