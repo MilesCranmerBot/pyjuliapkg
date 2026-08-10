@@ -83,16 +83,6 @@ python -m juliapkg remove Example
 - `juliapkg.update(dry_run=False)` updates the dependencies.
 - `juliapkg.freeze(target=None)` pins the currently resolved package versions.
 
-## Pinning versions
-
-`freeze(target)` (or `python -m juliapkg freeze --target=...`) records the exact version
-of every resolved package into a `juliapkg.pinned.json` file next to the `juliapkg.json`
-given by `target`. On subsequent resolves these versions are preferred wherever they are
-compatible with all requirements; conflicting pins are relaxed with a warning (see the
-`pins` option in Configuration to error instead, or to ignore pins). Ship this file with
-your Python package and your users get exactly the dependency versions you tested
-against. To upgrade: `update()` (which ignores pins), test, then `freeze()` again.
-
 ## Details
 
 ### Configuration
@@ -147,6 +137,16 @@ package, then JuliaPkg will find those dependencies and install them.
 
 You can use `add`, `rm` etc. above with `target='/path/to/your/package'` to modify the
 dependencies of your package.
+
+### Pinning versions
+
+`freeze(target)` (or `python -m juliapkg freeze --target=...`) records the exact version
+of every resolved package into a `juliapkg.pinned.json` file next to the `juliapkg.json`
+given by `target`. On subsequent resolves these versions are preferred wherever they are
+compatible with all requirements; conflicting pins are relaxed with a warning (see the
+`pins` option in Configuration to error instead, or to ignore pins). Ship this file with
+your Python package and your users get exactly the dependency versions you tested
+against. To upgrade: `update()` (which ignores pins), test, then `freeze()` again.
 
 ### Offline mode
 
