@@ -81,6 +81,30 @@ python -m juliapkg remove Example
 - `juliapkg.resolve(force=False, dry_run=False)` ensures all the dependencies are installed. You don't
   normally need to do this because the other functions resolve automatically.
 - `juliapkg.update(dry_run=False)` updates the dependencies.
+- `juliapkg.freeze(target=None)` pins the currently resolved package versions.
+
+## Pinning versions
+
+`freeze(target)` (or `python -m juliapkg freeze --target=...`) records the exact version
+of every currently resolved package into a `juliapkg.pinned.json` file next to the
+`juliapkg.json` file given by `target`. On subsequent resolves, these versions are
+preferred: the environment is seeded with the pinned versions before the required
+packages are added, so every pin that is compatible with all requirements is kept.
+
+This is useful when releasing a Python package with Julia dependencies: run your tests,
+then `freeze` and ship the pinned file alongside your `juliapkg.json`, and your users
+will get exactly the dependency versions you tested against, rather than whatever the
+registry resolves to at install time. This also reduces supply chain risk, since a newly
+published version of some deep dependency no longer reaches your users automatically.
+
+Pins are preferences, not requirements. If several installed packages provide conflicting
+pins, or a pin conflicts with some package's version constraints, the conflicting pins
+are relaxed with a warning and resolution proceeds. This behaviour can be changed with
+the `pins` option (see Configuration): `strict` raises an error instead of relaxing,
+and `ignore` disables pins entirely.
+
+`update()` ignores pins, so the workflow to upgrade is: `update()`, run your tests,
+then `freeze()` again.
 
 ## Details
 
@@ -95,6 +119,7 @@ option to `python`. The `-X` option has higher precedence.
 | `PYTHON_JULIAPKG_EXE=<exe>` | `-X juliapkg-exe=<exe>` | The Julia executable to use. |
 | `PYTHON_JULIAPKG_PROJECT=<project>` | `-X juliapkg-project=<project>` | The Julia project where packages are installed. |
 | `PYTHON_JULIAPKG_OFFLINE=<yes/no>` | `-X juliapkg-offline=<yes/no>` | Work in Offline Mode - does not install Julia or any packages. |
+| `PYTHON_JULIAPKG_PINS=<prefer/strict/ignore>` | `-X juliapkg-pins=<prefer/strict/ignore>` | How to treat pinned versions from `juliapkg.pinned.json` files: prefer them where compatible (default), error if any cannot be honoured, or ignore them. |
 
 ### Which Julia gets used?
 
