@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from juliapkg.deps import (
     PkgSpec,
     _install_script,
@@ -103,6 +105,64 @@ def test_find_pins(tmp_path):
     assert pins["Crayons"]["version"] == "4.1.1"
     # packages with a fixed source are not pinnable
     assert "DevPkg" not in pins
+    # in strict mode the conflict is an error
+    with pytest.raises(Exception, match="conflicting pins for Example"):
+        find_pins([], files=[str(fn2), str(fn1)], strict=True)
+
+
+def test_find_pins_uuid_conflict(tmp_path):
+    fn1 = tmp_path / "a.json"
+    fn2 = tmp_path / "b.json"
+    other_uuid = "123e4567-e89b-12d3-a456-426614174000"
+    fn1.write_text(
+        json.dumps(
+            {"packages": {"Example": {"uuid": EXAMPLE_UUID, "version": "0.5.4"}}}
+        )
+    )
+    fn2.write_text(
+        json.dumps({"packages": {"Example": {"uuid": other_uuid, "version": "0.5.4"}}})
+    )
+    # same version but different uuid is still a conflict
+    with pytest.raises(Exception, match="conflicting pins for Example"):
+        find_pins([], files=[str(fn1), str(fn2)], strict=True)
+    pins = find_pins([], files=[str(fn1), str(fn2)])
+    assert pins["Example"]["uuid"] == EXAMPLE_UUID
+
+
+def test_find_pins_invalid_entry(tmp_path):
+    fn = tmp_path / "a.json"
+    fn.write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "Example": {"uuid": EXAMPLE_UUID, "version": "0.5.4"},
+                    "BadUuid": {"uuid": "nope", "version": "1.0.0"},
+                    "BadVersion": {"uuid": EXAMPLE_UUID, "version": "latest"},
+                    "Missing": {"uuid": EXAMPLE_UUID},
+                }
+            }
+        )
+    )
+    # invalid entries are skipped in prefer mode
+    pins = find_pins([], files=[str(fn)])
+    assert set(pins) == {"Example"}
+    # and are an error in strict mode
+    with pytest.raises(Exception, match="invalid pin"):
+        find_pins([], files=[str(fn)], strict=True)
+
+
+def test_find_pins_compat_conflict(tmp_path):
+    fn = tmp_path / "a.json"
+    fn.write_text(
+        json.dumps(
+            {"packages": {"Example": {"uuid": EXAMPLE_UUID, "version": "0.4.1"}}}
+        )
+    )
+    pkgs = [PkgSpec(name="Example", uuid=EXAMPLE_UUID, version="0.5")]
+    # a pin conflicting with a required compat is skipped in prefer mode
+    assert find_pins(pkgs, files=[str(fn)]) == {}
+    with pytest.raises(Exception, match="conflicts with the required compat"):
+        find_pins(pkgs, files=[str(fn)], strict=True)
 
 
 def test_install_script_no_pins():
@@ -133,11 +193,13 @@ def test_install_script_pins():
         f'Pkg.PackageSpec(name="Example", uuid="{EXAMPLE_UUID}", version="0.5.4")'
         in text
     )
-    # pins are removed from the project again, except required packages
+    # only packages added by the seeding are removed from the project again
+    assert text.index("predeps = ") < text.index("Pkg.add(pins)")
     assert 'keep = String["Example"]' in text
+    assert "predeps)" in text
     assert "Pkg.rm(rmnames)" in text
-    # a failed seed and relaxed pins produce warnings, not errors
-    assert text.count("@warn") == 2
+    # relaxed pins produce a warning, not an error
+    assert text.count("@warn") == 1
     assert "error(" not in text
 
 
@@ -146,6 +208,5 @@ def test_install_script_pins_strict():
     pins = {"Example": {"uuid": EXAMPLE_UUID, "version": "0.5.4", "file": "x"}}
     script = _install_script([], [spec], pins, True, False)
     text = "\n".join(script)
-    assert "try Pkg.add" not in text
     assert "error(" in text
     assert "@warn" not in text

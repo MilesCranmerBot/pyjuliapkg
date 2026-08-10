@@ -148,6 +148,9 @@ compatible with all requirements; conflicting pins are relaxed with a warning (s
 your Python package and your users get exactly the dependency versions you tested
 against. To upgrade: `update()` (which ignores pins), test, then `freeze()` again.
 
+Packages tracked by `path`, `url` or `rev` are not pinned (note a branch `rev` is not
+reproducible). Pinning requires Julia 1.4+.
+
 ### Offline mode
 
 If you set the environment variable `PYTHON_JULIAPKG_OFFLINE=yes` (or call `python` with the

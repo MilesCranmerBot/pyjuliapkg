@@ -344,13 +344,14 @@ def tracked_files():
     return sorted(set(deps_files()) | set(pinned_files()))
 
 
-def find_pins(pkgs, files=None):
+def find_pins(pkgs, files=None, strict=False):
     """Find pinned versions from juliapkg.pinned.json files.
 
     Args:
         pkgs (list): The required PkgSpecs, used to exclude packages whose source
             is fixed some other way (dev, path, url, rev).
         files (list): The pinned files to read (defaults to all discovered ones).
+        strict (bool): Raise on invalid or conflicting pins instead of warning.
 
     Returns:
         dict: name -> {"uuid": str, "version": str, "file": str}.
@@ -358,6 +359,7 @@ def find_pins(pkgs, files=None):
     if files is None:
         files = pinned_files()
     unpinnable = {p.name for p in pkgs if p.dev or p.path or p.url or p.rev}
+    compats = {p.name: Compat.parse(str(p.version)) for p in pkgs if p.version}
     pins = {}
     for fn in sorted(files):
         with open(fn) as fp:
@@ -365,13 +367,35 @@ def find_pins(pkgs, files=None):
         for name, info in sorted(data.get("packages", {}).items()):
             if name in unpinnable:
                 continue
+            try:
+                PkgSpec(name=name, uuid=info["uuid"], version=info["version"])
+                version = Version.parse(info["version"])
+            except (KeyError, TypeError, ValueError) as err:
+                msg = f"invalid pin for {name} at {fn}: {err}"
+                if strict:
+                    raise Exception(msg) from err
+                log(f"WARNING: ignoring {msg}")
+                continue
+            if name in compats and version not in compats[name]:
+                msg = (
+                    f"pin {name} = {info['version']} at {fn} conflicts with"
+                    f" the required compat {compats[name]}"
+                )
+                if strict:
+                    raise Exception(msg)
+                log(f"WARNING: ignoring {msg}")
+                continue
             if name in pins:
-                if pins[name]["version"] != info["version"]:
-                    log(
-                        f"WARNING: conflicting pins for {name}:"
-                        f" keeping {pins[name]['version']} from {pins[name]['file']},"
-                        f" ignoring {info['version']} from {fn}"
+                prev = pins[name]
+                if (prev["uuid"], prev["version"]) != (info["uuid"], info["version"]):
+                    msg = (
+                        f"conflicting pins for {name}:"
+                        f" {prev['version']} ({prev['uuid']}) at {prev['file']},"
+                        f" {info['version']} ({info['uuid']}) at {fn}"
                     )
+                    if strict:
+                        raise Exception(msg)
+                    log(f"WARNING: {msg}; keeping the first")
                 continue
             pins[name] = {
                 "uuid": info["uuid"],
@@ -549,13 +573,10 @@ def _install_script(dev_pkgs, add_pkgs, pins, strict, update):
                 f' version="{info["version"]}"),'
             )
         script.append("]")
-        if strict:
-            script.append("Pkg.add(pins)")
-        else:
-            script.append(
-                'try Pkg.add(pins); catch err; @warn "JuliaPkg: could not install'
-                ' pinned versions, resolving without pins" err; end'
-            )
+        # snapshot the direct dependencies so that only packages added by the
+        # seeding below get removed again (shared projects may have others)
+        script.append("predeps = Set(keys(Pkg.project().dependencies))")
+        script.append("Pkg.add(pins)")
     if dev_pkgs:
         script.append("Pkg.develop([")
         for pkg in dev_pkgs:
@@ -577,7 +598,7 @@ def _install_script(dev_pkgs, add_pkgs, pins, strict, update):
         )
         script.append(
             "rmnames = setdiff!(intersect!([p.name for p in pins],"
-            " keys(Pkg.project().dependencies)), keep)"
+            " keys(Pkg.project().dependencies)), keep, predeps)"
         )
         script.append("isempty(rmnames) || Pkg.rm(rmnames)")
         # report any pins that did not survive resolution
@@ -739,7 +760,11 @@ def resolve(force=False, dry_run=False, update=False):
             if update or STATE["pins"] == "ignore":
                 pins = {}
             else:
-                pins = find_pins(pkgs)
+                pins = find_pins(pkgs, strict=STATE["pins"] == "strict")
+            if pins and ver < Version.parse("1.4.0"):
+                # the generated pins code uses Pkg.project()/Pkg.dependencies()
+                log("WARNING: version pins require Julia 1.4+, ignoring pins")
+                pins = {}
             script = _install_script(
                 dev_pkgs, add_pkgs, pins, STATE["pins"] == "strict", update
             )
@@ -1029,9 +1054,24 @@ def freeze(target=None):
     Returns:
         str: The path of the written file.
     """
+    deps_fn = cur_deps_file(target=target)
+    if not os.path.isfile(deps_fn):
+        raise Exception(
+            f"no dependencies file at {deps_fn}: pinned files are only used when"
+            " next to a juliapkg.json, so add dependencies first or pass a"
+            " different target"
+        )
     resolve()
     project = STATE["project"]
-    for fn in ["JuliaManifest.toml", "Manifest.toml"]:
+    # version-specific manifests take precedence when they exist
+    ver = STATE["version"]
+    names = [
+        f"JuliaManifest-v{ver.major}.{ver.minor}.toml",
+        f"Manifest-v{ver.major}.{ver.minor}.toml",
+        "JuliaManifest.toml",
+        "Manifest.toml",
+    ]
+    for fn in names:
         manifest_path = os.path.join(project, fn)
         if os.path.isfile(manifest_path):
             break
@@ -1040,7 +1080,7 @@ def freeze(target=None):
     with open(manifest_path) as fp:
         manifest = tomlkit.load(fp)
     pins = _pins_from_manifest(manifest)
-    fn = os.path.join(os.path.dirname(cur_deps_file(target=target)), PINNED_FILE_NAME)
+    fn = os.path.join(os.path.dirname(deps_fn), PINNED_FILE_NAME)
     with open(fn, "w") as fp:
         json.dump({"packages": pins}, fp, indent=2, sort_keys=True)
         fp.write("\n")

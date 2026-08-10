@@ -140,10 +140,30 @@ def test_resolve_pinned():
         assert "Crayons" not in proj["deps"]
 
 
+def test_resolve_pinned_shared_preserves_user_deps():
+    with tempfile.TemporaryDirectory() as tempdir:
+        # a pre-existing user project with Crayons as a direct dependency, which
+        # is also pinned; the pin cleanup must not remove it
+        with open(os.path.join(tempdir, "Project.toml"), "w") as f:
+            f.write(f'[deps]\nCrayons = "{CRAYONS_UUID}"\n')
+        _write_pins_project(tempdir, "0.5.4")
+        subprocess.run(
+            ["python", "-c", "import juliapkg; juliapkg.resolve()"],
+            env=dict(os.environ, PYTHON_JULIAPKG_PROJECT=tempdir),
+            check=True,
+        )
+        with open(os.path.join(tempdir, "Project.toml"), "rb") as f:
+            proj = tomllib.load(f)
+        assert "Crayons" in proj["deps"]
+        deps = _manifest(tempdir)
+        assert deps["Crayons"][0]["version"] == "4.1.1"
+        assert deps["Example"][0]["version"] == "0.5.4"
+
+
 def test_resolve_pinned_relaxes_on_conflict():
     with tempfile.TemporaryDirectory() as tempdir:
         # the pin is incompatible with the required compat "0.5", so it gets
-        # relaxed with a warning
+        # dropped with a warning and resolution proceeds
         _write_pins_project(tempdir, "0.4.1")
         subprocess.run(
             ["python", "-c", "import juliapkg; juliapkg.resolve()"],
