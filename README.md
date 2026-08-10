@@ -86,25 +86,12 @@ python -m juliapkg remove Example
 ## Pinning versions
 
 `freeze(target)` (or `python -m juliapkg freeze --target=...`) records the exact version
-of every currently resolved package into a `juliapkg.pinned.json` file next to the
-`juliapkg.json` file given by `target`. On subsequent resolves, these versions are
-preferred: the environment is seeded with the pinned versions before the required
-packages are added, so every pin that is compatible with all requirements is kept.
-
-This is useful when releasing a Python package with Julia dependencies: run your tests,
-then `freeze` and ship the pinned file alongside your `juliapkg.json`, and your users
-will get exactly the dependency versions you tested against, rather than whatever the
-registry resolves to at install time. This also reduces supply chain risk, since a newly
-published version of some deep dependency no longer reaches your users automatically.
-
-Pins are preferences, not requirements. If several installed packages provide conflicting
-pins, or a pin conflicts with some package's version constraints, the conflicting pins
-are relaxed with a warning and resolution proceeds. This behaviour can be changed with
-the `pins` option (see Configuration): `strict` raises an error instead of relaxing,
-and `ignore` disables pins entirely.
-
-`update()` ignores pins, so the workflow to upgrade is: `update()`, run your tests,
-then `freeze()` again.
+of every resolved package into a `juliapkg.pinned.json` file next to the `juliapkg.json`
+given by `target`. On subsequent resolves these versions are preferred wherever they are
+compatible with all requirements; conflicting pins are relaxed with a warning (see the
+`pins` option in Configuration to error instead, or to ignore pins). Ship this file with
+your Python package and your users get exactly the dependency versions you tested
+against. To upgrade: `update()` (which ignores pins), test, then `freeze()` again.
 
 ## Details
 

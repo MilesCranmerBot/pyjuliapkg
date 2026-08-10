@@ -18,6 +18,8 @@ from .state import STATE
 
 logger = logging.getLogger("juliapkg")
 
+PINNED_FILE_NAME = "juliapkg.pinned.json"
+
 ### META
 
 # Meta format version history:
@@ -326,9 +328,6 @@ def deps_files():
     )
 
 
-PINNED_FILE_NAME = "juliapkg.pinned.json"
-
-
 def pinned_files():
     return sorted(
         set(
@@ -550,17 +549,13 @@ def _install_script(dev_pkgs, add_pkgs, pins, strict, update):
                 f' version="{info["version"]}"),'
             )
         script.append("]")
-        script.append("try")
-        script.append("  Pkg.add(pins)")
-        script.append("catch err")
         if strict:
-            script.append("  rethrow()")
+            script.append("Pkg.add(pins)")
         else:
             script.append(
-                '  @warn "JuliaPkg: could not install pinned versions,'
-                ' resolving without pins" err'
+                'try Pkg.add(pins); catch err; @warn "JuliaPkg: could not install'
+                ' pinned versions, resolving without pins" err; end'
             )
-        script.append("end")
     if dev_pkgs:
         script.append("Pkg.develop([")
         for pkg in dev_pkgs:
@@ -572,45 +567,37 @@ def _install_script(dev_pkgs, add_pkgs, pins, strict, update):
             script.append(f"  {pkg.jlstr()},")
         script.append("])")
     if pins:
-        # pins are not direct dependencies, so remove them from the project;
-        # any that are no longer needed get pruned from the manifest
-        required = {pkg.name for pkg in dev_pkgs} | {pkg.name for pkg in add_pkgs}
-        pin_only = sorted(set(pins) - required)
-        if pin_only:
-            script.append(
-                "pinonly = String[" + ", ".join(f'"{name}"' for name in pin_only) + "]"
-            )
-            script.append("projdeps = Pkg.project().dependencies")
-            script.append("rmnames = filter(n -> haskey(projdeps, n), pinonly)")
-            script.append("isempty(rmnames) || Pkg.rm(rmnames)")
+        # pins are not direct dependencies: remove them from the project again,
+        # which also prunes any that are not needed
+        required = sorted(
+            {pkg.name for pkg in dev_pkgs} | {pkg.name for pkg in add_pkgs}
+        )
+        script.append(
+            "keep = String[" + ", ".join(f'"{name}"' for name in required) + "]"
+        )
+        script.append(
+            "rmnames = setdiff!(intersect!([p.name for p in pins],"
+            " keys(Pkg.project().dependencies)), keep)"
+        )
+        script.append("isempty(rmnames) || Pkg.rm(rmnames)")
         # report any pins that did not survive resolution
-        script.append("pinned = Dict{String,String}(")
-        for name in sorted(pins):
-            script.append(f'  "{name}" => "{pins[name]["version"]}",')
-        script.append(")")
-        script.append("relaxed = String[]")
-        script.append("for (uuid, dep) in Pkg.dependencies()")
-        script.append("  want = get(pinned, dep.name, nothing)")
         script.append(
-            "  if want !== nothing && dep.version !== nothing"
-            " && string(dep.version) != want"
+            "vers = Dict(d.name => string(d.version)"
+            " for d in values(Pkg.dependencies()) if d.version !== nothing)"
         )
         script.append(
-            '    push!(relaxed, string(dep.name, ": pinned ", want,'
-            ' ", resolved ", dep.version))'
+            'relaxed = sort!([string(p.name, ": pinned ", p.version, ", resolved ",'
+            " vers[p.name]) for p in pins"
+            " if get(vers, p.name, string(p.version)) != string(p.version)])"
         )
-        script.append("  end")
-        script.append("end")
-        script.append("if !isempty(relaxed)")
-        script.append(
-            '  msg = string("JuliaPkg: pinned versions were relaxed to satisfy'
-            ' compatibility:\\n  ", join(sort!(relaxed), "\\n  "))'
+        msg = (
+            'string("JuliaPkg: pinned versions were relaxed to satisfy'
+            ' compatibility:\\n  ", join(relaxed, "\\n  "))'
         )
         if strict:
-            script.append("  error(msg)")
+            script.append(f"isempty(relaxed) || error({msg})")
         else:
-            script.append("  @warn msg")
-        script.append("end")
+            script.append(f"isempty(relaxed) || @warn {msg}")
     if update:
         script.append("Pkg.update()")
     else:

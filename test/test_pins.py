@@ -133,12 +133,12 @@ def test_install_script_pins():
         f'Pkg.PackageSpec(name="Example", uuid="{EXAMPLE_UUID}", version="0.5.4")'
         in text
     )
-    # pin-only packages are removed from the project again
-    assert 'pinonly = String["Crayons"]' in text
+    # pins are removed from the project again, except required packages
+    assert 'keep = String["Example"]' in text
     assert "Pkg.rm(rmnames)" in text
-    # relaxed pins produce a warning, not an error
-    assert "@warn msg" in text
-    assert "error(msg)" not in text
+    # a failed seed and relaxed pins produce warnings, not errors
+    assert text.count("@warn") == 2
+    assert "error(" not in text
 
 
 def test_install_script_pins_strict():
@@ -146,6 +146,6 @@ def test_install_script_pins_strict():
     pins = {"Example": {"uuid": EXAMPLE_UUID, "version": "0.5.4", "file": "x"}}
     script = _install_script([], [spec], pins, True, False)
     text = "\n".join(script)
-    assert "rethrow()" in text
-    assert "error(msg)" in text
-    assert "@warn msg" not in text
+    assert "try Pkg.add" not in text
+    assert "error(" in text
+    assert "@warn" not in text
