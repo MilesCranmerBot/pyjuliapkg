@@ -1,8 +1,10 @@
 # Changelog
 
+## v0.1.26 (2026-08-14)
+* Add `julia_args` argument to `resolve()`.
+
 ## v0.1.25 (2026-08-07)
 * Add preferences support.
-* Add `julia_args` argument to `resolve()`.
 
 ## v0.1.24 (2026-05-31)
 * Add `libjulia()` function.
