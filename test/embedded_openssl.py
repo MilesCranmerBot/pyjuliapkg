@@ -103,7 +103,14 @@ try:
         let path = realpath(Libdl.dlpath(OpenSSL_jll.libcrypto)),
             roots = [realpath(p) for p in [joinpath(Sys.BINDIR, ".."); DEPOT_PATH]
                      if ispath(p)]
-            path, any(root -> path == root || startswith(path, root * "/"), roots)
+            path, any(roots) do root
+                try
+                    relative = relpath(path, root)
+                    relative == "." || first(splitpath(relative)) != ".."
+                catch
+                    false
+                end
+            end
         end
     """)
     check("OpenSSL_jll is Julia's own", bool(jll_is_own), str(jll_path))
